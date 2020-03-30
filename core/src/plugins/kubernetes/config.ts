@@ -151,7 +151,7 @@ export const defaultResources: KubernetesResources = {
     },
     requests: {
       cpu: 100,
-      memory: 64,
+      memory: 90,
     },
   },
 }
