@@ -2263,8 +2263,8 @@ describe("Garden", () => {
       const garden = await makeTestGarden(root)
       await garden.scanAndAddConfigs()
 
-      const configA = (await garden.getRawModuleConfigs(["foo-bar-test-a"]))[0]
-      const configB = (await garden.getRawModuleConfigs(["foo-bar-test-b"]))[0]
+      const configA = (await garden.getRawModuleConfigs(["foo-test-a"]))[0]
+      const configB = (await garden.getRawModuleConfigs(["foo-test-b"]))[0]
 
       expect(omitUndefined(configA)).to.eql({
         apiVersion: "garden.io/v0",
@@ -2274,13 +2274,14 @@ describe("Garden", () => {
         },
         include: [],
         configPath: resolve(root, "modules.garden.yml"),
-        name: "foo-bar-test-a",
+        name: "foo-test-a",
         path: root,
         serviceConfigs: [],
         spec: {
           build: {
             dependencies: [],
           },
+          extraFlags: ["${providers.test-plugin.outputs.testKey}"],
         },
         testConfigs: [],
         type: "test",
@@ -2295,23 +2296,24 @@ describe("Garden", () => {
         parentName: "foo",
         templateName: "combo",
         inputs: {
-          foo: "bar",
+          name: "test",
+          value: "${providers.test-plugin.outputs.testKey}",
         },
       })
       expect(omitUndefined(configB)).to.eql({
         apiVersion: "garden.io/v0",
         kind: "Module",
         build: {
-          dependencies: [{ name: "foo-bar-test-a", copy: [] }],
+          dependencies: [{ name: "foo-test-a", copy: [] }],
         },
         include: [],
         configPath: resolve(root, "modules.garden.yml"),
-        name: "foo-bar-test-b",
+        name: "foo-test-b",
         path: root,
         serviceConfigs: [],
         spec: {
           build: {
-            dependencies: [{ name: "foo-bar-test-a", copy: [] }],
+            dependencies: [{ name: "foo-test-a", copy: [] }],
           },
         },
         testConfigs: [],
@@ -2326,7 +2328,8 @@ describe("Garden", () => {
         parentName: "foo",
         templateName: "combo",
         inputs: {
-          foo: "bar",
+          name: "test",
+          value: "${providers.test-plugin.outputs.testKey}",
         },
       })
     })
@@ -2818,7 +2821,7 @@ describe("Garden", () => {
 
       expect(fileContents.toString().trim()).to.equal(dedent`
         Hello I am file!
-        input: bar
+        input: testValue
         module reference: ${projectRoot}
       `)
     })
@@ -2836,7 +2839,7 @@ describe("Garden", () => {
 
       expect(fileContents.toString().trim()).to.equal(dedent`
         Hello I am string!
-        input: bar
+        input: testValue
         module reference: ${projectRoot}
       `)
     })
@@ -3006,6 +3009,36 @@ describe("Garden", () => {
 
           module-a <- module-b <- module-a
         `)
+      )
+    })
+
+    it("fully resolves module template inputs before resolving templated modules", async () => {
+      const root = resolve(dataDir, "test-projects", "module-templates")
+      const garden = await makeTestGarden(root)
+
+      const graph = await garden.getConfigGraph(garden.log)
+      const moduleA = graph.getModule("foo-test-a")
+
+      expect(moduleA.spec.extraFlags).to.eql(["testValue"])
+    })
+
+    it("throws if templated module inputs don't match the template inputs schema", async () => {
+      const root = resolve(dataDir, "test-projects", "module-templates")
+      const garden = await makeTestGarden(root)
+
+      await garden.scanAndAddConfigs()
+
+      const moduleA = garden["moduleConfigs"]["foo-test-a"]
+      moduleA.inputs = { name: "test", value: 123 }
+
+      await expectError(
+        () => garden.getConfigGraph(garden.log),
+        (err) =>
+          expect(stripAnsi(err.message)).to.equal(dedent`
+          Failed resolving one or more modules:
+
+          foo-test-a: Error validating inputs for module foo-test-a (modules.garden.yml): value at ..value should be string
+          `)
       )
     })
   })
